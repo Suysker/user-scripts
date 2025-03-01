@@ -47,6 +47,84 @@ export default class SettingsDrawer {
     // }, 1e3);
   };
 
+  // 添加官方同步黑名单的函数
+  public readonly addAllToBlacklist = async () => {
+    // 1. 获取 blockedUsers 中所有用户 ID
+    const allUserIDs = blockedUsers.distinctID();
+    if (allUserIDs.length === 0) {
+      console.log("本地没有存储屏蔽用户。");
+      return;
+    }
+
+    // 2. 请求获取官方黑名单数据
+    let officialBlacklistIDs: string[] = [];
+    try {
+      const resp = await fetch("https://api.bilibili.com/x/relation/blacks", {
+        method: "GET",
+        credentials: "include",
+      });
+      const result = await resp.json();
+      if (result.code !== 0) {
+        console.error("获取官方黑名单失败：", result.message);
+        return;
+      }
+      // 提取官方黑名单中每个用户的 mid（转换为字符串以便比对）
+      officialBlacklistIDs = result.data.list.map((item: any) =>
+        String(item.mid)
+      );
+    } catch (err) {
+      console.error("获取官方黑名单时发生错误：", err);
+      return;
+    }
+
+    // 3. 筛选出本地存在但官方黑名单中没有的用户
+    const toAdd = allUserIDs.filter((id) => !officialBlacklistIDs.includes(id));
+    if (toAdd.length === 0) {
+      console.log("所有本地屏蔽用户已在官方黑名单中。");
+      return;
+    }
+
+    // 4. 从 cookie 中获取 csrf（bili_jct 的值）
+    const csrfMatch = document.cookie.match(/bili_jct=([^;]+)/);
+    const csrf = csrfMatch ? csrfMatch[1] : "";
+    if (!csrf) {
+      console.error("无法获取 csrf 令牌！");
+      return;
+    }
+
+    // 5. 依次发送 POST 请求，将缺失的用户添加到官方黑名单
+    for (const id of toAdd) {
+      try {
+        const postData = new URLSearchParams();
+        postData.set("fid", id);
+        // 官方接口要求 act=5 表示添加至黑名单
+        postData.set("act", "5");
+        postData.set("re_src", "11");
+        postData.set("gaia_source", "web_main");
+        postData.set("spmid", "333.1387.0.0");
+        postData.set("extend_content", JSON.stringify({ entity: "user", entity_id: id }));
+        postData.set("csrf", csrf);
+
+        const res = await fetch("https://api.bilibili.com/x/relation/modify", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: postData.toString(),
+        });
+        const resData = await res.json();
+        if (resData.code === 0) {
+          console.log(`成功将用户 ${id} 添加到官方黑名单`);
+        } else {
+          console.error(`添加用户 ${id} 失败：${resData.message}`);
+        }
+      } catch (err) {
+        console.error(`添加用户 ${id} 时发生网络错误：`, err);
+      }
+    }
+  };
+  
   private html() {
     if (!this.active) {
       return nothing;
@@ -408,6 +486,16 @@ export default class SettingsDrawer {
                 })}
             </tbody>
           </table>
+        </div>
+        <!-- 添加“添加全部至黑名單”按钮 -->
+        <div class="flex justify-end mt-2">
+          <button
+            type="button"
+            class="px-2 py-1 border rounded text-sm"
+            @click=${this.addAllToBlacklist}
+          >
+            添加全部至黑名單
+          </button>
         </div>
       </div>
     `;

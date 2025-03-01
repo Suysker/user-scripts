@@ -1,0 +1,47 @@
+name: NodeJS with Gulp
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以便提交推送
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Build
+        run: |
+          pnpm install
+          gulp
+
+      - name: Commit and push changes to dist folder
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          # 检查 dist 文件夹是否有修改
+          if [ -n "$(git status --porcelain dist)" ]; then
+            git add dist
+            git commit -m "Update dist folder"
+            git push
+          else
+            echo "No changes in dist folder."
+          fi
